@@ -391,7 +391,7 @@ elif page == "TikTok":
                         with open(zip_name, "rb") as zf:
                             st.download_button("⬇️ Download ZIP", data=zf, file_name=zip_name.name)
 
-‎# INSTAGRAM Account: grid preview + selection + ZIP (cookie support)
+‎
 ‎elif page == "Instagram":
 ‎    st.markdown("<h2>📸 Instagram Account — Grid Preview</h2>", unsafe_allow_html=True)
 ‎    ig_user = st.text_input("Enter Instagram username (without @)", key="ig_user")
