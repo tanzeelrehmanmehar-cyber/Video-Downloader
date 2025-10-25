@@ -391,32 +391,108 @@ elif page == "TikTok":
                         with open(zip_name, "rb") as zf:
                             st.download_button("⬇️ Download ZIP", data=zf, file_name=zip_name.name)
 
-# INSTAGRAM Account: grid preview + selection + ZIP (cookie support)
-elif page == "Instagram":
-    st.markdown("<h2>📸 Instagram Account — Grid Preview</h2>", unsafe_allow_html=True)
-    ig_user = st.text_input("Enter Instagram username (without @)", key="ig_user")
-    if ig_user and ig_user.strip():
-        profile_url = f"https://www.instagram.com/{ig_user.strip()}/"
-        preview_limit = st.slider("Preview first N posts", 3, 36, 12, 3, key="ig_preview")
-        cookie = st.session_state.INSTAGRAM_COOKIE or None
-        with st.spinner("Fetching profile preview (may require cookie for private accounts)..."):
-            info = fetch_metadata(profile_url, cookie=cookie, limit_preview=preview_limit)
-        entries = info.get("entries") if info and isinstance(info, dict) else None
-        if not entries:
-            st.info("No preview entries. Profile may be private or blocked. Try setting cookie under 'Set Instagram Cookie'.")
-        else:
-            st.write(f"Showing {len(entries)} items from @{ig_user.strip()}")
-            c_a, c_b, c_c = st.columns([1, 1, 2])
-            with c_a:
-                if st.button("Select All Visible (IG)"):
-                    for idx in range(len(entries)):
-                        st.session_state[f"ig_chk_{idx}"] = True
-                    st.experimental_rerun()
-            with c_b:
-                if st.button("Deselect All Visible (IG)"):
-                    for idx in range(len(entries)):
-                        st.session_state[f"ig_chk_{idx}"] = False
-                    st.experimental_rerun()
-            with c_c:
-                select_first = st.number_input("Quick select first N", min_value=0, max_value=len(entries), value=0, step=1, key="ig_quick")
-                if st.
+‎# INSTAGRAM Account: grid preview + selection + ZIP (cookie support)
+‎elif page == "Instagram":
+‎    st.markdown("<h2>📸 Instagram Account — Grid Preview</h2>", unsafe_allow_html=True)
+‎    ig_user = st.text_input("Enter Instagram username (without @)", key="ig_user")
+‎    if ig_user and ig_user.strip():
+‎        profile_url = f"https://www.instagram.com/{ig_user.strip()}/"
+‎        preview_limit = st.slider("Preview first N posts", 3, 36, 12, 3, key="ig_preview")
+‎        cookie = st.session_state.INSTAGRAM_COOKIE or None
+‎        with st.spinner("Fetching profile preview (may require cookie for private accounts)..."):
+‎            info = fetch_metadata(profile_url, cookie=cookie, limit_preview=preview_limit)
+‎        entries = info.get("entries") if info and isinstance(info, dict) else None
+‎        if not entries:
+‎            st.info("No preview entries. Profile may be private or blocked. Try setting cookie under 'Set Instagram Cookie'.")
+‎        else:
+‎            st.write(f"Showing {len(entries)} items from @{ig_user.strip()}")
+‎            c_a, c_b, c_c = st.columns([1, 1, 2])
+‎            with c_a:
+‎                if st.button("Select All Visible (IG)"):
+‎                    for idx in range(len(entries)):
+‎                        st.session_state[f"ig_chk_{idx}"] = True
+‎                    st.experimental_rerun()
+‎            with c_b:
+‎                if st.button("Deselect All Visible (IG)"):
+‎                    for idx in range(len(entries)):
+‎                        st.session_state[f"ig_chk_{idx}"] = False
+‎                    st.experimental_rerun()
+‎            with c_c:
+‎                select_first = st.number_input("Quick select first N", min_value=0, max_value=len(entries), value=0, step=1, key="ig_quick")
+‎                if st.button("Apply Quick Select (IG)"):
+‎                    for idx in range(len(entries)):
+‎                        st.session_state[f"ig_chk_{idx}"] = True if idx < select_first else False
+‎                    st.experimental_rerun()
+‎
+‎            # grid
+‎            st.markdown("<div class='grid'>", unsafe_allow_html=True)
+‎            selected_urls = []
+‎            for idx, e in enumerate(entries):
+‎                url_item = e.get("webpage_url") or e.get("url") or e.get("id")
+‎                key = f"ig_chk_{idx}"
+‎                default = st.session_state.get(key, False)
+‎                st.markdown("<div class='grid-item'>", unsafe_allow_html=True)
+‎                if e.get("thumbnail"):
+‎                    st.image(e.get("thumbnail"), use_column_width=True)
+‎                st.markdown(f"<div class='grid-title'>{(e.get('title') or '')[:80]}</div>", unsafe_allow_html=True)
+‎                st.markdown(f"<div class='grid-meta'>{human_duration(e.get('duration'))} • {e.get('uploader') or ''}</div>", unsafe_allow_html=True)
+‎                chk = st.checkbox("Select", value=default, key=key)
+‎                if chk:
+‎                    selected_urls.append(url_item)
+‎                st.markdown("</div>", unsafe_allow_html=True)
+‎            st.markdown("</div>", unsafe_allow_html=True)
+‎
+‎            if st.button("⬇️ Download Selected & Create ZIP (IG)"):
+‎                if not selected_urls:
+‎                    st.warning("No posts selected.")
+‎                else:
+‎                    st.info(f"Downloading {len(selected_urls)} selected posts...")
+‎                    files = download_with_progress(selected_urls, audio=False, cookie=cookie)
+‎                    if files:
+‎                        tmp_dir = OUT_DIR / f"tmp_zip_ig_{int(time.time())}"
+‎                        tmp_dir.mkdir(exist_ok=True)
+‎                        for f in files:
+‎                            src = Path(f)
+‎                            if src.exists():
+‎                                shutil.copy(src, tmp_dir / src.name)
+‎                        zip_name = OUT_DIR / f"{ig_user.strip()}_selected_{int(time.time())}.zip"
+‎                        shutil.make_archive(str(zip_name.with_suffix('')), 'zip', root_dir=tmp_dir)
+‎                        shutil.rmtree(tmp_dir)
+‎                        st.success(f"ZIP created: {zip_name.name}")
+‎                        with open(zip_name, "rb") as zf:
+‎                            st.download_button("⬇️ Download ZIP", data=zf, file_name=zip_name.name)
+‎
+‎# COOKIE
+‎elif page == "Cookie":
+‎    st.markdown("<h2>⚙️ Instagram Cookie (optional)</h2>", unsafe_allow_html=True)
+‎    st.markdown("If profiles are private or preview fails, paste a full cookie string here (sessionid=...; csrftoken=...; ...). Keep this private.")
+‎    cookie_val = st.text_area("Paste cookie string", value=st.session_state.INSTAGRAM_COOKIE, height=140)
+‎    if st.button("Save Cookie"):
+‎        if cookie_val and cookie_val.strip():
+‎            st.session_state.INSTAGRAM_COOKIE = cookie_val.strip()
+‎            st.success("Cookie saved for this session.")
+‎        else:
+‎            st.warning("Paste a non-empty cookie string.")
+‎
+‎# ABOUT
+‎elif page == "About":
+‎    st.markdown("<h2>💡 About</h2>", unsafe_allow_html=True)
+‎    st.write("""
+‎- **Auto-preview** thumbnails & metadata for any URL.  
+‎- **Grid preview** for TikTok & Instagram accounts (thumbnail hover, select/deselect all).  
+‎- **Download selected items** and receive a single **ZIP** containing chosen videos.  
+‎- Built with **Streamlit + yt-dlp**.  
+‎- Developer: **Tanzeel ur Rehman**
+‎""")
+‎    st.markdown("---")
+‎    recent = sorted(list(OUT_DIR.glob("*")), key=lambda p: p.stat().st_mtime, reverse=True)[:6]
+‎    if recent:
+‎        st.write("Recent downloads:")
+‎        cols = st.columns(min(3, len(recent)))
+‎        for i, f in enumerate(recent):
+‎            with cols[i % len(cols)]:
+‎                st.write(f.name)
+‎                with open(f, "rb") as fh:
+‎                    st.download_button("⬇️ Save", data=fh, file_name=f.name)
+‎
+‎st.markdown("</div>", unsafe_allow_html=True)
