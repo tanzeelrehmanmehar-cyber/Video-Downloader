@@ -1,211 +1,295 @@
-import os
 import streamlit as st
 from yt_dlp import YoutubeDL
+from pathlib import Path
+import os
+import time
 
-# ---------------------- SETUP ----------------------
+# ---------- Page config ----------
 st.set_page_config(
-    page_title="🎬 All-in-One Downloader",
-    layout="centered",
+    page_title="🎬 Universal Downloader",
     page_icon="🎥",
+    layout="centered",
+    initial_sidebar_state="expanded",
 )
 
-OUT_DIR = "downloads"
-os.makedirs(OUT_DIR, exist_ok=True)
+# ---------- Directories ----------
+OUT_DIR = Path("downloads")
+OUT_DIR.mkdir(exist_ok=True)
 
-# ---------------------- STYLES ----------------------
-st.markdown("""
-    <style>
-    body { background-color: #0e1117; color: white; }
-    .stTextInput > div > div > input { background-color: #1c1f26; color: white; }
-    .stTextArea textarea { background-color: #1c1f26; color: white; }
-    .css-1d391kg { background-color: #0e1117; }
-    .stButton>button {
-        background-color: #00c853;
-        color: white;
-        border-radius: 8px;
-        font-weight: 600;
-        padding: 0.6em 1.5em;
-    }
-    .stButton>button:hover { background-color: #00e676; }
-    </style>
-""", unsafe_allow_html=True)
+# ---------- CSS (dark modern) ----------
+st.markdown(
+    """
+<style>
+body, .stApp { background: linear-gradient(180deg,#060607,#0c1016); color: #e6f7ff; font-family: 'Inter', sans-serif; }
+h1, h2, h3 { color: #8ef0ff; text-align:center; }
+.section { background: #0f1720; border-radius: 12px; padding: 18px; box-shadow: 0 6px 26px rgba(0,0,0,0.6); margin-bottom: 18px; }
+.stButton>button { background: linear-gradient(90deg,#00e0ff,#0078ff); color: white; border-radius: 10px; padding: 8px 18px; font-weight:600; }
+input[type=text], textarea { background:#11141a !important; color: #e6f7ff !important; border-radius:8px !important; padding: 10px !important; border: 1px solid #233042 !important; }
+[data-testid="stSidebar"] { background: linear-gradient(180deg,#071018,#0f202a); color: white; }
+footer { visibility: hidden; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
-st.title("🎬 All-in-One Downloader")
-st.caption("Download from TikTok, YouTube, Instagram & more in one place!")
-
-# ---------------------- SIDEBAR MENU ----------------------
+# ---------- Sidebar menu ----------
+st.sidebar.title("🎬 Universal Downloader")
 menu = st.sidebar.radio(
-    "📂 Choose an Option:",
+    "Choose an option",
     [
         "🏠 Home",
         "🎞️ Download Any Video (MP4)",
         "🎵 Download Audio (MP3)",
-        "🎬 TikTok Account Downloader",
-        "📸 Instagram Account Downloader",
+        "🎬 Download TikTok Account Videos",
+        "📸 Download Instagram Account Videos",
         "⚙️ Set Instagram Cookie",
-        "💡 About / Projects"
-    ]
+        "💡 About / Projects",
+    ],
 )
 
-INSTAGRAM_COOKIE = st.session_state.get("INSTAGRAM_COOKIE", "")
+# session state for cookie and last file
+if "INSTAGRAM_COOKIE" not in st.session_state:
+    st.session_state["INSTAGRAM_COOKIE"] = ""
 
-# ---------------------- HELPER FUNCTIONS ----------------------
-def download_media(url, audio_only=False, cookie=None):
-    """Generic media downloader"""
-    if not url:
-        st.warning("⚠️ Please paste a valid link first.")
+if "last_files" not in st.session_state:
+    st.session_state["last_files"] = []
+
+# ---------- Utility: human-friendly filename list display ----------
+def show_downloaded_files(files):
+    if not files:
+        st.info("No files downloaded yet in this session.")
         return
+    st.write("### ⤵️ Downloaded files (this session)")
+    for p in files:
+        p = Path(p)
+        if p.exists():
+            with open(p, "rb") as f:
+                st.download_button(label=f"⬇️ {p.name}", data=f, file_name=p.name)
 
-    st.info("⏳ Downloading... Please wait...")
+# ---------- Core downloader with progress hook ----------
+def download_with_progress(url: str, *, audio_only: bool = False, cookie: str | None = None, out_dir: Path = OUT_DIR):
+    """
+    Download a single URL using yt-dlp and update Streamlit progress UI using a hook.
+    Returns list of saved Path(s) or raises exception.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outtmpl = str(out_dir / "%(title).100s.%(ext)s")
+
+    ydl_opts = {
+        "outtmpl": outtmpl,
+        "nocheckcertificate": True,
+        "noplaylist": False,   # allow playlist/profile downloads when URL is a profile/playlist
+        "quiet": True,
+        "no_warnings": True,
+        "ignoreerrors": True,
+        "progress_hooks": [],
+    }
+
+    if audio_only:
+        ydl_opts.update(
+            {
+                "format": "bestaudio/best",
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
+            }
+        )
+    else:
+        ydl_opts["format"] = "best"
+        ydl_opts["merge_output_format"] = "mp4"
+
+    if cookie:
+        # write cookie string to temporary file for yt-dlp
+        cookiefile = out_dir / "insta_cookie.txt"
+        cookiefile.write_text(cookie)
+        ydl_opts["cookiefile"] = str(cookiefile)
+
+    # Prepare UI elements
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    file_list_placeholder = st.empty()
+    downloaded_paths = []
+
+    def progress_hook(d):
+        # called frequently with download status
+        status = d.get("status")
+        if status == "downloading":
+            total = d.get("total_bytes") or d.get("total_bytes_estimate")
+            downloaded = d.get("downloaded_bytes", 0)
+            if total:
+                pct = int(downloaded * 100 / total)
+                progress_bar.progress(min(pct, 100))
+                status_text.info(f"Downloading — {d.get('filename','file')} — {pct}% ({downloaded}/{total} bytes)")
+            else:
+                # unknown total
+                progress_bar.progress(5)  # animate slight progress
+                status_text.info(f"Downloading — {d.get('filename','file')} — {d.get('downloaded_bytes',0)} bytes")
+        elif status == "finished":
+            progress_bar.progress(100)
+            status_text.success("Download finished — finalizing (merging/converting)...")
+        elif status == "error":
+            status_text.error("Error during download.")
+
+    ydl_opts["progress_hooks"].append(progress_hook)
+
+    # Run yt-dlp
     try:
-        opts = {
-            "outtmpl": os.path.join(OUT_DIR, "%(title).100s.%(ext)s"),
-            "quiet": True,
-            "merge_output_format": "mp4",
-        }
-
-        if audio_only:
-            opts["format"] = "bestaudio/best"
-            opts["postprocessors"] = [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }]
-        else:
-            opts["format"] = "best"
-
-        if cookie:
-            cookie_file = "cookie.txt"
-            with open(cookie_file, "w") as f:
-                f.write(cookie)
-            opts["cookiefile"] = cookie_file
-
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-
-        st.success("✅ Download complete!")
-        with open(filename, "rb") as f:
-            st.download_button(
-                label="⬇️ Click to Download",
-                data=f,
-                file_name=os.path.basename(filename),
-                mime="audio/mpeg" if audio_only else "video/mp4",
-            )
-
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
-
-
-def download_tiktok_account(username):
-    """Download all videos from TikTok account"""
-    if not username:
-        st.warning("⚠️ Please enter a TikTok username.")
-        return
-
-    username = username.lstrip("@")
-    playlist_url = f"https://www.tiktok.com/@{username}"
-    st.info(f"📥 Fetching all videos from @{username}...")
-
-    try:
-        ydl_opts = {
-            "outtmpl": os.path.join(OUT_DIR, f"tiktok_{username}_%(id)s.%(ext)s"),
-            "format": "best",
-            "quiet": True,
-            "merge_output_format": "mp4",
-        }
         with YoutubeDL(ydl_opts) as ydl:
-            ydl.download([playlist_url])
-
-        st.success(f"✅ Downloaded all available videos from @{username}.")
-
+            # Extract info first if we want to show metadata thumbnail/title (optional)
+            # info = ydl.extract_info(url, download=False)
+            # Then download (this also calls hooks)
+            result = ydl.extract_info(url, download=True)
+            # After download, find saved files in out_dir that are new or match pattern
+            # yt-dlp can return dict or list
+            saved = []
+            if isinstance(result, dict):
+                # single or playlist info
+                # Try to build expected filename(s) using ydl.prepare_filename - simpler: scan folder for recent files
+                # We'll pick files modified within last 60 seconds as downloaded candidates
+                now = time.time()
+                for p in out_dir.iterdir():
+                    try:
+                        if p.is_file() and (now - p.stat().st_mtime) < 300:  # 5 minutes window
+                            saved.append(p)
+                    except Exception:
+                        continue
+            elif isinstance(result, list):
+                now = time.time()
+                for p in out_dir.iterdir():
+                    try:
+                        if p.is_file() and (now - p.stat().st_mtime) < 300:
+                            saved.append(p)
+                    except Exception:
+                        continue
+            # Deduplicate and sort by mtime
+            saved_unique = sorted(set(saved), key=lambda p: p.stat().st_mtime, reverse=True)
+            for p in saved_unique:
+                downloaded_paths.append(str(p))
     except Exception as e:
-        st.error(f"❌ Failed: {e}")
+        progress_bar.empty()
+        status_text.error(f"Download failed: {e}")
+        raise
 
+    # finalize UI
+    if downloaded_paths:
+        status_text.success("✅ Download complete!")
+        file_list_placeholder.write("Saved files:")
+        for p in downloaded_paths:
+            file_list_placeholder.write(f"- `{p}`")
+    else:
+        status_text.warning("No files detected in download folder after yt-dlp finished.")
 
-def download_instagram_account(username, cookie):
-    """Download all videos from Instagram account"""
-    if not username:
-        st.warning("⚠️ Please enter Instagram username.")
-        return
-    if not cookie:
-        st.warning("⚠️ Please set Instagram cookie first (in '⚙️ Set Cookie').")
-        return
+    return downloaded_paths
 
-    username = username.lstrip("@")
-    profile_url = f"https://www.instagram.com/{username}/"
-
-    cookie_file = "ig_cookie.txt"
-    with open(cookie_file, "w") as f:
-        f.write(cookie)
-
-    st.info(f"📥 Downloading videos from @{username}...")
-
-    try:
-        ydl_opts = {
-            "outtmpl": os.path.join(OUT_DIR, f"instagram_{username}_%(id)s.%(ext)s"),
-            "format": "best",
-            "quiet": True,
-            "merge_output_format": "mp4",
-            "ignoreerrors": True,
-            "cookiefile": cookie_file,
-        }
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.download([profile_url])
-
-        st.success(f"✅ All available videos from @{username} downloaded!")
-
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
-
-
-# ---------------------- PAGE HANDLERS ----------------------
+# ---------- Page handlers ----------
+st.markdown("<div class='section'>", unsafe_allow_html=True)
 if menu == "🏠 Home":
-    st.markdown("""
-    ### 👋 Welcome to All-in-One Downloader
-    This app lets you:
-    - 🎞️ Download any video (TikTok, YouTube, etc.)
-    - 🎵 Convert to MP3 (audio only)
-    - 📸 Download all posts from TikTok or Instagram profiles
-    - ⚙️ Manage cookies for login-required sites
-
-    ---
-    💾 All downloads are saved in `downloads/` folder.
-    """)
+    st.markdown("<h1>🎥 Universal Downloader</h1>", unsafe_allow_html=True)
+    st.write(
+        "Use the sidebar to choose an option. This app uses **yt-dlp** under the hood and supports many sites (YouTube, TikTok, Instagram, etc.)."
+    )
+    st.write("Files are saved in the `downloads/` folder of the app container. Use the download buttons below to fetch files to your device.")
+    show_downloaded_files(st.session_state["last_files"])
 
 elif menu == "🎞️ Download Any Video (MP4)":
-    url = st.text_input("🎥 Paste video link:")
-    if st.button("Download Video"):
-        download_media(url, audio_only=False)
+    st.markdown("<h2>🎞️ Download Any Video (MP4)</h2>", unsafe_allow_html=True)
+    url = st.text_input("Paste video / reel URL (YouTube, TikTok, Instagram, etc.)", key="video_url")
+    if st.button("Download Video (MP4)"):
+        if not url or not url.strip():
+            st.warning("Please paste a valid URL.")
+        else:
+            try:
+                files = download_with_progress(url.strip(), audio_only=False, cookie=None)
+                if files:
+                    st.session_state["last_files"].extend(files)
+                    show_downloaded_files(files)
+            except Exception as e:
+                st.error(f"Download error: {e}")
 
 elif menu == "🎵 Download Audio (MP3)":
-    url = st.text_input("🎧 Paste video link to extract audio:")
-    if st.button("Download Audio"):
-        download_media(url, audio_only=True)
+    st.markdown("<h2>🎵 Download Audio (MP3)</h2>", unsafe_allow_html=True)
+    url = st.text_input("Paste video URL to extract MP3", key="audio_url")
+    if st.button("Download Audio (MP3)"):
+        if not url or not url.strip():
+            st.warning("Please paste a valid URL.")
+        else:
+            try:
+                files = download_with_progress(url.strip(), audio_only=True, cookie=None)
+                if files:
+                    st.session_state["last_files"].extend(files)
+                    show_downloaded_files(files)
+            except Exception as e:
+                st.error(f"Download error: {e}")
 
-elif menu == "🎬 TikTok Account Downloader":
-    username = st.text_input("Enter TikTok username (without @):")
-    if st.button("Download TikTok Videos"):
-        download_tiktok_account(username)
+elif menu == "🎬 Download TikTok Account Videos":
+    st.markdown("<h2>🎬 Download TikTok Account Videos</h2>", unsafe_allow_html=True)
+    t_username = st.text_input("Enter TikTok username (without @)", key="tiktok_user")
+    t_count = st.number_input("Max videos to download (0 = all available)", min_value=0, max_value=500, value=0, step=1)
+    if st.button("Download TikTok Account"):
+        if not t_username or not t_username.strip():
+            st.warning("Enter a TikTok username.")
+        else:
+            account_url = f"https://www.tiktok.com/@{t_username.strip()}"
+            # yt-dlp will handle profile/playlist URLs; we pass the account_url and let it fetch all available videos
+            try:
+                files = download_with_progress(account_url, audio_only=False, cookie=None)
+                if files:
+                    # If user asked for limited count, trim by newest files
+                    if t_count and t_count > 0:
+                        files = files[: t_count]
+                    st.session_state["last_files"].extend(files)
+                    show_downloaded_files(files)
+            except Exception as e:
+                st.error(f"Download error: {e}")
 
-elif menu == "📸 Instagram Account Downloader":
-    username = st.text_input("Enter Instagram username (without @):")
-    if st.button("Download Instagram Videos"):
-        download_instagram_account(username, INSTAGRAM_COOKIE)
+elif menu == "📸 Download Instagram Account Videos":
+    st.markdown("<h2>📸 Download Instagram Account Videos</h2>", unsafe_allow_html=True)
+    ig_username = st.text_input("Enter Instagram username (without @)", key="ig_user")
+    btn_col1, btn_col2 = st.columns([1, 1])
+    with btn_col1:
+        if st.button("Download Instagram Account"):
+            if not ig_username or not ig_username.strip():
+                st.warning("Enter an Instagram username.")
+            else:
+                profile_url = f"https://www.instagram.com/{ig_username.strip()}/"
+                cookie = st.session_state.get("INSTAGRAM_COOKIE") or None
+                try:
+                    files = download_with_progress(profile_url, audio_only=False, cookie=cookie)
+                    if files:
+                        st.session_state["last_files"].extend(files)
+                        show_downloaded_files(files)
+                except Exception as e:
+                    st.error(f"Download error: {e}")
+    with btn_col2:
+        st.info("If the account is private or Instagram blocks requests, set your Instagram cookie via 'Set Instagram Cookie' in the sidebar.")
 
 elif menu == "⚙️ Set Instagram Cookie":
-    cookie = st.text_area("Paste your Instagram cookie string below:")
+    st.markdown("<h2>⚙️ Set Instagram Cookie</h2>", unsafe_allow_html=True)
+    st.markdown(
+        "If you need to download from private accounts or avoid Instagram rate limiting, paste a full cookie string (single line, e.g. `sessionid=...; csrftoken=...;`)."
+    )
+    cookie_input = st.text_area("Paste full Instagram cookie string here", value=st.session_state["INSTAGRAM_COOKIE"])
     if st.button("Save Cookie"):
-        st.session_state["INSTAGRAM_COOKIE"] = cookie
-        st.success("✅ Cookie saved successfully! You can now download Instagram videos.")
+        if cookie_input and cookie_input.strip():
+            st.session_state["INSTAGRAM_COOKIE"] = cookie_input.strip()
+            st.success("✅ Instagram cookie saved in session (will be used for Instagram downloads).")
+        else:
+            st.warning("Paste a non-empty cookie string.")
 
 elif menu == "💡 About / Projects":
-    st.markdown("""
-    ### 🌍 My Projects
-    - 💖 [Love Games](https://love-games.netlify.app)
-    - 🎬 [Watch Party](https://watch-party-yt.netlify.app)
-    
-    ---
-    🧠 Created with Streamlit + yt-dlp  
-    💾 Fully works on Streamlit Cloud or local PC
-    """)
+    st.markdown("<h2>💡 About & Projects</h2>", unsafe_allow_html=True)
+    st.write(
+        """
+- Built with **Streamlit** + **yt-dlp**  
+- Supports downloads from many sites (YouTube, TikTok, Instagram, Reels, etc.)  
+- Developer: **Tanzeel ur Rehman**
+"""
+    )
+    st.markdown("---")
+    show_downloaded_files(st.session_state["last_files"])
+
+st.markdown("</div>", unsafe_allow_html=True)
