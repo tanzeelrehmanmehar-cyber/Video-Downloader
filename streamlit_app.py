@@ -3,6 +3,7 @@ import streamlit as st
 from yt_dlp import YoutubeDL
 from pathlib import Path
 import os
+import time
 
 # ----------------------------
 # ---------- Settings ----------
@@ -27,7 +28,7 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ----------------------------
-# ---------- Fixed Hamburger Menu ----------
+# ---------- Hamburger Menu ----------
 # ----------------------------
 menu_html = """
 <style>
@@ -119,34 +120,37 @@ function toggleMenu() {
 st.markdown(menu_html, unsafe_allow_html=True)
 
 # ----------------------------
-# ---------- Pages ----------
+# ---------- Helper Functions ----------
 # ----------------------------
-st.markdown("<h2 id='download-link'>🎬 Universal Video & Audio Downloader</h2>", unsafe_allow_html=True)
-
-# Helper functions
 def download_video(url, out_dir=DEFAULT_OUT_DIR):
     out_dir.mkdir(exist_ok=True)
+    progress_text = st.empty()
+    status_bar = st.progress(0)
+
     ydl_opts = {
         "outtmpl": str(out_dir / "%(title).100s.%(ext)s"),
         "format": "best",
         "quiet": True,
+        "progress_hooks": [
+            lambda d: progress_hook(d, status_bar, progress_text)
+        ],
         "no_warnings": True,
         "ignoreerrors": True,
         "merge_output_format": "mp4",
     }
+
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            entries = info["entries"] if isinstance(info, dict) and "entries" in info else [info]
-            for entry in entries:
-                if entry and entry.get("webpage_url"):
-                    ydl.download([entry["webpage_url"]])
+            ydl.download([url])
         st.success(f"✅ Video saved to: {out_dir}")
     except Exception as e:
         st.error(f"⚠️ Failed: {e}")
 
 def download_audio(url, out_dir=DEFAULT_OUT_DIR):
     out_dir.mkdir(exist_ok=True)
+    progress_text = st.empty()
+    status_bar = st.progress(0)
+
     ydl_opts = {
         "outtmpl": str(out_dir / "%(title).100s.%(ext)s"),
         "format": "bestaudio/best",
@@ -158,22 +162,68 @@ def download_audio(url, out_dir=DEFAULT_OUT_DIR):
             "preferredcodec": "mp3",
             "preferredquality": "192",
         }],
+        "progress_hooks": [
+            lambda d: progress_hook(d, status_bar, progress_text)
+        ],
     }
+
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            entries = info["entries"] if isinstance(info, dict) and "entries" in info else [info]
-            for entry in entries:
-                if entry and entry.get("webpage_url"):
-                    ydl.download([entry["webpage_url"]])
+            ydl.download([url])
         st.success(f"✅ MP3 saved to: {out_dir}")
     except Exception as e:
         st.error(f"⚠️ Failed: {e}")
 
+def progress_hook(d, progress_bar, progress_text):
+    if d['status'] == 'downloading':
+        total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
+        downloaded_bytes = d.get('downloaded_bytes', 0)
+        if total_bytes:
+            progress = min(int(downloaded_bytes / total_bytes * 100), 100)
+            progress_bar.progress(progress)
+            progress_text.text(f"Downloading: {d.get('filename', '')}\nProgress: {progress}%")
+    elif d['status'] == 'finished':
+        progress_bar.progress(100)
+        progress_text.text(f"Finished: {d.get('filename', '')}")
+
+def get_tiktok_urls(username):
+    username = username.lstrip("@")
+    url = f"https://www.tiktok.com/@{username}"
+    ydl_opts = {"quiet": True, "skip_download": True, "extract_flat": True, "no_warnings": True}
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    entries = info.get("entries") if info else []
+    urls = [e["url"] for e in entries if "url" in e]
+    return urls
+
+def download_instagram_account(username, cookie, out_dir=DEFAULT_OUT_DIR):
+    out_dir = out_dir / f"instagram_{username}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ydl_opts = {
+        "outtmpl": str(out_dir / "%(upload_date)s_%(id)s.%(ext)s"),
+        "format": "best",
+        "quiet": False,
+        "no_warnings": True,
+        "ignoreerrors": True,
+        "merge_output_format": "mp4",
+        "cookiesfromstring": True,
+        "cookiefile": cookie,
+        "progress_hooks": [
+            lambda d: progress_hook(d, st.progress(0), st.empty())
+        ],
+    }
+    profile_url = f"https://www.instagram.com/{username}/"
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([profile_url])
+        st.success(f"✅ Instagram videos saved in: {out_dir}")
+    except Exception as e:
+        st.error(f"⚠️ Failed to download Instagram account @{username}: {e}")
+
 # ----------------------------
-# Download Link Section
+# ---------- Sections ----------
 # ----------------------------
-st.markdown("### Download from any link (Video/Audio)")
+st.markdown("<h3 id='download-link'>Download from any link</h3>", unsafe_allow_html=True)
 with st.form("link_form"):
     url_input = st.text_input("Paste video/audio link here")
     download_type = st.radio("Select type", ["Video (MP4)", "Audio (MP3)"])
@@ -184,24 +234,14 @@ with st.form("link_form"):
         else:
             download_audio(url_input)
 
-# ----------------------------
-# TikTok Section
-# ----------------------------
+st.markdown("<hr>", unsafe_allow_html=True)
+
 st.markdown("<h3 id='tiktok'>TikTok Account Videos</h3>", unsafe_allow_html=True)
 with st.form("tiktok_form"):
     tiktok_user = st.text_input("Enter TikTok username (without @)")
     video_count = st.number_input("Number of videos (0 = all)", min_value=0, step=1)
     submitted = st.form_submit_button("Download TikTok Videos")
     if submitted and tiktok_user:
-        def get_tiktok_urls(username):
-            username = username.lstrip("@")
-            url = f"https://www.tiktok.com/@{username}"
-            ydl_opts = {"quiet": True, "skip_download": True, "extract_flat": True, "no_warnings": True}
-            with YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-            entries = info.get("entries") if info else []
-            urls = [e["url"] for e in entries if "url" in e]
-            return urls
         urls = get_tiktok_urls(tiktok_user)
         if not urls:
             st.warning("⚠️ No videos found or username invalid.")
@@ -210,9 +250,8 @@ with st.form("tiktok_form"):
             for u in to_download:
                 download_video(u, DEFAULT_OUT_DIR / tiktok_user)
 
-# ----------------------------
-# Instagram Section
-# ----------------------------
+st.markdown("<hr>", unsafe_allow_html=True)
+
 st.markdown("<h3 id='instagram'>Instagram Account Videos</h3>", unsafe_allow_html=True)
 st.markdown("⚠️ You must provide a valid Instagram cookie for account access.")
 with st.form("insta_form"):
@@ -220,22 +259,6 @@ with st.form("insta_form"):
     ig_cookie = st.text_area("Paste full Instagram cookie string here")
     submitted = st.form_submit_button("Download Instagram Videos")
     if submitted and ig_user and ig_cookie:
-        ydl_opts = {
-            "outtmpl": str(DEFAULT_OUT_DIR / f"instagram_{ig_user}/%(upload_date)s_%(id)s.%(ext)s"),
-            "format": "best",
-            "quiet": False,
-            "no_warnings": True,
-            "ignoreerrors": True,
-            "merge_output_format": "mp4",
-            "cookiesfromstring": True,
-            "cookiefile": ig_cookie,
-        }
-        profile_url = f"https://www.instagram.com/{ig_user}/"
-        try:
-            with YoutubeDL(ydl_opts) as ydl:
-                ydl.download([profile_url])
-            st.success(f"✅ Instagram videos saved in: {DEFAULT_OUT_DIR / f'instagram_{ig_user}'}")
-        except Exception as e:
-            st.error(f"⚠️ Failed to download Instagram account @{ig_user}: {e}")
+        download_instagram_account(ig_user, ig_cookie)
 
 st.markdown("<p style='text-align:center;color:gray'>Created with ❤️ by YourName</p>", unsafe_allow_html=True)
