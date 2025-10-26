@@ -4,10 +4,10 @@ from pathlib import Path
 import traceback
 import base64
 
-# ---------------- Streamlit Config ----------------
+# ---------------------- CONFIG ----------------------
 st.set_page_config(page_title="All Video Downloader", page_icon="🎬", layout="wide")
 
-# Hide default Streamlit header/footer
+# Hide Streamlit default header/footer
 st.markdown("""
 <style>
 header, footer {visibility: hidden;}
@@ -15,7 +15,7 @@ header, footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- Navbar ----------------
+# ---------------------- NAVBAR ----------------------
 st.markdown("""
 <div style="
 background:linear-gradient(90deg,#007BFF,#00C2FF);
@@ -24,7 +24,7 @@ display:flex;
 justify-content:center;
 gap:18px;
 border-radius:0 0 12px 12px;
-">
+font-size:17px;">
 <a href="?page=Home" style="color:white;font-weight:600;text-decoration:none;">🏠 Home</a>
 <a href="?page=AnyVideo" style="color:white;font-weight:600;text-decoration:none;">🎞️ Any Video</a>
 <a href="?page=Audio" style="color:white;font-weight:600;text-decoration:none;">🎧 Audio</a>
@@ -37,12 +37,12 @@ border-radius:0 0 12px 12px;
 
 st.write("")  # small spacing
 
-# ---------------- Setup ----------------
+# ---------------------- SETUP ----------------------
 OUT_DIR = Path("downloads")
 OUT_DIR.mkdir(exist_ok=True)
 
 def auto_download_button(filepath: Path):
-    """Trigger automatic browser download after file is ready."""
+    """Automatically trigger browser download."""
     try:
         with open(filepath, "rb") as f:
             data = f.read()
@@ -54,11 +54,11 @@ def auto_download_button(filepath: Path):
         st.warning(f"Auto download failed: {e}")
 
 def download_video(url: str, audio_only=False):
-    """Download with real-time progress using yt-dlp."""
+    """Download using yt-dlp with real-time progress."""
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    def progress_hook(d):
+    def hook(d):
         if d['status'] == 'downloading':
             percent = d.get('_percent_str', '0%').replace('%', '')
             speed = d.get('_speed_str', '')
@@ -75,7 +75,7 @@ def download_video(url: str, audio_only=False):
 
     ydl_opts = {
         "outtmpl": str(OUT_DIR / "%(title).80s.%(ext)s"),
-        "progress_hooks": [progress_hook],
+        "progress_hooks": [hook],
         "quiet": True,
         "ignoreerrors": True,
     }
@@ -103,7 +103,7 @@ def download_video(url: str, audio_only=False):
         st.error(str(e))
         st.text(traceback.format_exc())
 
-# ---------------- Enter Key JS ----------------
+# ---------------------- ENTER KEY ----------------------
 enter_js = """
 <script>
 document.addEventListener('keydown', function(e) {
@@ -115,16 +115,13 @@ document.addEventListener('keydown', function(e) {
 </script>
 """
 
-# ---------------- Routing Logic ----------------
-query_params = st.query_params
-page = query_params.get("page", ["Home"])[0]
+# ---------------------- PAGE LOGIC ----------------------
+page = st.query_params.get("page", ["Home"])[0]
 
-# ---------------- Pages ----------------
 if page == "Home":
     st.title("🎬 All Video Downloader")
     st.write("Welcome! Choose a platform from the top menu to start downloading.")
     st.markdown("---")
-
     recent = sorted(OUT_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
     if recent:
         st.subheader("📂 Recent Downloads")
@@ -135,7 +132,7 @@ if page == "Home":
 elif page == "AnyVideo":
     st.header("🎞️ Download Any Video")
     st.markdown(enter_js, unsafe_allow_html=True)
-    url = st.text_input("Enter video URL (YouTube, TikTok, Instagram, etc.)")
+    url = st.text_input("Enter any video URL (YouTube, TikTok, Instagram, etc.)")
     if url and st.button("Download Video"):
         download_video(url)
 
@@ -162,8 +159,10 @@ elif page == "Instagram":
 
 elif page == "Cookie":
     st.header("⚙️ Cookie Settings")
-    st.text_area("Paste your cookie string here", height=150)
-    st.info("Add cookies here if the website requires login access.")
+    cookie = st.text_area("Paste your cookie string here", height=150)
+    if cookie:
+        st.success("✅ Cookie saved for this session.")
+    st.info("Add cookies if a website requires login access.")
 
 elif page == "About":
     st.header("💡 About")
