@@ -3,12 +3,15 @@ import streamlit as st
 from yt_dlp import YoutubeDL
 from pathlib import Path
 import os
-import time
+import platform
 
 # ----------------------------
 # ---------- Settings ----------
 # ----------------------------
-DEFAULT_OUT_DIR = Path.home() / "Downloads" / "TecHelp"
+if platform.system() == "Linux" and os.path.exists("/storage/emulated/0"):
+    DEFAULT_OUT_DIR = Path("/storage/emulated/0/TecHelp")
+else:
+    DEFAULT_OUT_DIR = Path.home() / "Downloads" / "TecHelp"
 DEFAULT_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 st.set_page_config(
@@ -18,102 +21,47 @@ st.set_page_config(
 )
 
 # Hide default Streamlit header/footer
-hide_streamlit_style = """
-    <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    </style>
-"""
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+st.markdown("""
+<style>
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
 
 # ----------------------------
 # ---------- Hamburger Menu ----------
 # ----------------------------
 menu_html = """
 <style>
-/* Hamburger icon container */
 .hamburger-container {
-    position: fixed;
-    top: 15px;
-    right: 20px;
-    z-index: 9999;
+    position: fixed; top: 15px; right: 20px; z-index: 9999;
 }
-
-/* Hamburger lines */
-.hamburger {
-    cursor: pointer;
-    width: 30px;
-    height: 22px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-}
-
-.hamburger div {
-    width: 100%;
-    height: 4px;
-    background-color: #4B3E8C;
-    border-radius: 2px;
-}
-
-/* Dropdown menu */
+.hamburger {cursor: pointer; width: 30px; height: 22px; display: flex; flex-direction: column; justify-content: space-between;}
+.hamburger div {width: 100%; height: 4px; background-color: #4B3E8C; border-radius: 2px;}
 .menu-items {
-    display: none;
-    position: fixed;
-    top: 50px;
-    right: 20px;
-    background-color: white;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    box-shadow: 0px 4px 12px rgba(0,0,0,0.15);
-    z-index: 9999;
-    min-width: 200px;
-    flex-direction: column;
-    padding: 10px;
+    display: none; position: fixed; top: 50px; right: 20px;
+    background-color: white; border: 1px solid #ddd; border-radius: 8px;
+    box-shadow: 0px 4px 12px rgba(0,0,0,0.15); z-index: 9999; min-width: 200px;
+    flex-direction: column; padding: 10px;
 }
-
-.menu-items a {
-    text-decoration: none;
-    color: #4B3E8C;
-    padding: 8px;
-    font-weight: bold;
-    display: block;
-}
-
-.menu-items a:hover {
-    background-color: #f0f0f0;
-    border-radius: 4px;
-}
-
-/* Show menu when active */
-.menu-active {
-    display: flex !important;
-    flex-direction: column;
-}
+.menu-items a {text-decoration: none; color: #4B3E8C; padding: 8px; font-weight: bold; display: block;}
+.menu-items a:hover {background-color: #f0f0f0; border-radius: 4px;}
+.menu-active {display: flex !important; flex-direction: column;}
 </style>
-
 <div class="hamburger-container">
-    <div class="hamburger" onclick="toggleMenu()">
-        <div></div>
-        <div></div>
-        <div></div>
-    </div>
+    <div class="hamburger" onclick="toggleMenu()"><div></div><div></div><div></div></div>
     <div id="menu" class="menu-items">
-        <a href="#download-link">Download Link</a>
-        <a href="#tiktok">TikTok Account</a>
-        <a href="#instagram">Instagram Account</a>
+        <a href="#home">Home</a>
+        <a href="#download">Download Link</a>
+        <a href="#tiktok">TikTok</a>
+        <a href="#instagram">Instagram</a>
     </div>
 </div>
-
 <script>
 function toggleMenu() {
     var menu = document.getElementById("menu");
-    if (menu.classList.contains("menu-active")) {
-        menu.classList.remove("menu-active");
-    } else {
-        menu.classList.add("menu-active");
-    }
+    menu.classList.toggle("menu-active");
 }
 </script>
 """
@@ -122,23 +70,31 @@ st.markdown(menu_html, unsafe_allow_html=True)
 # ----------------------------
 # ---------- Helper Functions ----------
 # ----------------------------
+def progress_hook(d, progress_bar, progress_text):
+    if d['status'] == 'downloading':
+        total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
+        downloaded_bytes = d.get('downloaded_bytes', 0)
+        if total_bytes:
+            progress = min(int(downloaded_bytes / total_bytes * 100), 100)
+            progress_bar.progress(progress)
+            progress_text.text(f"Downloading: {d.get('filename','')}\nProgress: {progress}%")
+    elif d['status'] == 'finished':
+        progress_bar.progress(100)
+        progress_text.text(f"Finished: {d.get('filename','')}")
+
 def download_video(url, out_dir=DEFAULT_OUT_DIR):
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     progress_text = st.empty()
     status_bar = st.progress(0)
-
     ydl_opts = {
         "outtmpl": str(out_dir / "%(title).100s.%(ext)s"),
         "format": "best",
         "quiet": True,
-        "progress_hooks": [
-            lambda d: progress_hook(d, status_bar, progress_text)
-        ],
+        "progress_hooks": [lambda d: progress_hook(d, status_bar, progress_text)],
         "no_warnings": True,
         "ignoreerrors": True,
         "merge_output_format": "mp4",
     }
-
     try:
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
@@ -147,44 +103,24 @@ def download_video(url, out_dir=DEFAULT_OUT_DIR):
         st.error(f"⚠️ Failed: {e}")
 
 def download_audio(url, out_dir=DEFAULT_OUT_DIR):
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     progress_text = st.empty()
     status_bar = st.progress(0)
-
     ydl_opts = {
         "outtmpl": str(out_dir / "%(title).100s.%(ext)s"),
         "format": "bestaudio/best",
         "quiet": True,
+        "progress_hooks": [lambda d: progress_hook(d, status_bar, progress_text)],
         "no_warnings": True,
         "ignoreerrors": True,
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }],
-        "progress_hooks": [
-            lambda d: progress_hook(d, status_bar, progress_text)
-        ],
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
     }
-
     try:
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
         st.success(f"✅ MP3 saved to: {out_dir}")
     except Exception as e:
         st.error(f"⚠️ Failed: {e}")
-
-def progress_hook(d, progress_bar, progress_text):
-    if d['status'] == 'downloading':
-        total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
-        downloaded_bytes = d.get('downloaded_bytes', 0)
-        if total_bytes:
-            progress = min(int(downloaded_bytes / total_bytes * 100), 100)
-            progress_bar.progress(progress)
-            progress_text.text(f"Downloading: {d.get('filename', '')}\nProgress: {progress}%")
-    elif d['status'] == 'finished':
-        progress_bar.progress(100)
-        progress_text.text(f"Finished: {d.get('filename', '')}")
 
 def get_tiktok_urls(username):
     username = username.lstrip("@")
@@ -208,9 +144,7 @@ def download_instagram_account(username, cookie, out_dir=DEFAULT_OUT_DIR):
         "merge_output_format": "mp4",
         "cookiesfromstring": True,
         "cookiefile": cookie,
-        "progress_hooks": [
-            lambda d: progress_hook(d, st.progress(0), st.empty())
-        ],
+        "progress_hooks": [lambda d: progress_hook(d, st.progress(0), st.empty())],
     }
     profile_url = f"https://www.instagram.com/{username}/"
     try:
@@ -218,12 +152,16 @@ def download_instagram_account(username, cookie, out_dir=DEFAULT_OUT_DIR):
             ydl.download([profile_url])
         st.success(f"✅ Instagram videos saved in: {out_dir}")
     except Exception as e:
-        st.error(f"⚠️ Failed to download Instagram account @{username}: {e}")
+        st.error(f"⚠️ Failed: {e}")
 
 # ----------------------------
-# ---------- Sections ----------
+# ---------- Pages ----------
 # ----------------------------
-st.markdown("<h3 id='download-link'>Download from any link</h3>", unsafe_allow_html=True)
+st.markdown("<h2 id='home'>🎬 Universal Video & Audio Downloader</h2>", unsafe_allow_html=True)
+st.markdown("Use the hamburger menu at top-right to navigate between pages.")
+
+# ---- Download Link Page ----
+st.markdown("<h3 id='download'>Download from any link</h3>", unsafe_allow_html=True)
 with st.form("link_form"):
     url_input = st.text_input("Paste video/audio link here")
     download_type = st.radio("Select type", ["Video (MP4)", "Audio (MP3)"])
@@ -234,8 +172,8 @@ with st.form("link_form"):
         else:
             download_audio(url_input)
 
+# ---- TikTok Page ----
 st.markdown("<hr>", unsafe_allow_html=True)
-
 st.markdown("<h3 id='tiktok'>TikTok Account Videos</h3>", unsafe_allow_html=True)
 with st.form("tiktok_form"):
     tiktok_user = st.text_input("Enter TikTok username (without @)")
@@ -250,8 +188,8 @@ with st.form("tiktok_form"):
             for u in to_download:
                 download_video(u, DEFAULT_OUT_DIR / tiktok_user)
 
+# ---- Instagram Page ----
 st.markdown("<hr>", unsafe_allow_html=True)
-
 st.markdown("<h3 id='instagram'>Instagram Account Videos</h3>", unsafe_allow_html=True)
 st.markdown("⚠️ You must provide a valid Instagram cookie for account access.")
 with st.form("insta_form"):
