@@ -1,48 +1,65 @@
 import streamlit as st
 from yt_dlp import YoutubeDL
 from pathlib import Path
-import traceback
-import base64
+import base64, traceback
 
-# ---------------------- CONFIG ----------------------
+# ---------------- CONFIG ----------------
 st.set_page_config(page_title="All Video Downloader", page_icon="🎬", layout="wide")
 
-# Hide Streamlit default header/footer
+# Hide default Streamlit header/footer
 st.markdown("""
 <style>
 header, footer {visibility: hidden;}
-.st-emotion-cache-1jicfl2 {padding-top: 0rem;}
+body {background-color: #0b0c10; color: #c5c6c7;}
+.stButton>button {
+  background: linear-gradient(90deg,#00C2FF,#007BFF);
+  color: white; border-radius: 10px; font-weight: 600;
+}
+.stButton>button:hover {
+  background: linear-gradient(90deg,#007BFF,#00C2FF);
+}
+.navbar {
+  background: linear-gradient(90deg,#007BFF,#00C2FF);
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  border-radius: 0 0 12px 12px;
+  gap: 18px;
+}
+.navbar button {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.navbar button:hover {text-decoration: underline;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------------- NAVBAR ----------------------
-st.markdown("""
-<div style="
-background:linear-gradient(90deg,#007BFF,#00C2FF);
-padding:14px;
-display:flex;
-justify-content:center;
-gap:18px;
-border-radius:0 0 12px 12px;
-font-size:17px;">
-<a href="?page=Home" style="color:white;font-weight:600;text-decoration:none;">🏠 Home</a>
-<a href="?page=AnyVideo" style="color:white;font-weight:600;text-decoration:none;">🎞️ Any Video</a>
-<a href="?page=Audio" style="color:white;font-weight:600;text-decoration:none;">🎧 Audio</a>
-<a href="?page=TikTok" style="color:white;font-weight:600;text-decoration:none;">🎬 TikTok</a>
-<a href="?page=Instagram" style="color:white;font-weight:600;text-decoration:none;">📸 Instagram</a>
-<a href="?page=Cookie" style="color:white;font-weight:600;text-decoration:none;">⚙️ Cookie</a>
-<a href="?page=About" style="color:white;font-weight:600;text-decoration:none;">💡 About</a>
-</div>
-""", unsafe_allow_html=True)
+# ---------------- SESSION STATE ----------------
+if "page" not in st.session_state:
+    st.session_state.page = "Home"
 
-st.write("")  # small spacing
+# ---------------- NAVBAR ----------------
+col_home, col_video, col_audio, col_tt, col_ig, col_cookie, col_about = st.columns(7)
+with col_home: st.button("🏠 Home", on_click=lambda: st.session_state.update(page="Home"))
+with col_video: st.button("🎞️ Any Video", on_click=lambda: st.session_state.update(page="AnyVideo"))
+with col_audio: st.button("🎧 Audio", on_click=lambda: st.session_state.update(page="Audio"))
+with col_tt: st.button("🎬 TikTok", on_click=lambda: st.session_state.update(page="TikTok"))
+with col_ig: st.button("📸 Instagram", on_click=lambda: st.session_state.update(page="Instagram"))
+with col_cookie: st.button("⚙️ Cookie", on_click=lambda: st.session_state.update(page="Cookie"))
+with col_about: st.button("💡 About", on_click=lambda: st.session_state.update(page="About"))
 
-# ---------------------- SETUP ----------------------
+# ---------------- FOLDER ----------------
 OUT_DIR = Path("downloads")
 OUT_DIR.mkdir(exist_ok=True)
 
+# ---------------- UTILITIES ----------------
 def auto_download_button(filepath: Path):
-    """Automatically trigger browser download."""
+    """Trigger browser download automatically."""
     try:
         with open(filepath, "rb") as f:
             data = f.read()
@@ -54,7 +71,7 @@ def auto_download_button(filepath: Path):
         st.warning(f"Auto download failed: {e}")
 
 def download_video(url: str, audio_only=False):
-    """Download using yt-dlp with real-time progress."""
+    """Download video with live progress."""
     progress_bar = st.progress(0)
     status_text = st.empty()
 
@@ -103,7 +120,7 @@ def download_video(url: str, audio_only=False):
         st.error(str(e))
         st.text(traceback.format_exc())
 
-# ---------------------- ENTER KEY ----------------------
+# ---------------- ENTER KEY SUPPORT ----------------
 enter_js = """
 <script>
 document.addEventListener('keydown', function(e) {
@@ -115,12 +132,12 @@ document.addEventListener('keydown', function(e) {
 </script>
 """
 
-# ---------------------- PAGE LOGIC ----------------------
-page = st.query_params.get("page", ["Home"])[0]
+# ---------------- PAGES ----------------
+page = st.session_state.page
 
 if page == "Home":
     st.title("🎬 All Video Downloader")
-    st.write("Welcome! Choose a platform from the top menu to start downloading.")
+    st.write("Welcome! Use the top navigation bar to start downloading videos or audio.")
     st.markdown("---")
     recent = sorted(OUT_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
     if recent:
