@@ -1,146 +1,85 @@
 import streamlit as st
 from yt_dlp import YoutubeDL
 from pathlib import Path
-import base64
 import traceback
+import base64
 
-# ---------------- CONFIG ----------------
-APP_TITLE = "All Video Downloader"
-APP_TAGLINE = "Enjoy"
-st.set_page_config(page_title=f"{APP_TITLE} — {APP_TAGLINE}", page_icon="🎬", layout="wide")
+# ---------------- Streamlit Config ----------------
+st.set_page_config(page_title="All Video Downloader", page_icon="🎬", layout="wide")
 
-OUT_DIR = Path("downloads")
-OUT_DIR.mkdir(exist_ok=True)
-
-# ---------------- GLOBAL CSS ----------------
+# Hide default Streamlit header/footer
 st.markdown("""
 <style>
-body, .stApp { 
-    background: linear-gradient(180deg,#030407,#07101a); 
-    color: #eafcff; 
-    font-family: Inter, sans-serif; 
-}
-h1,h2,h3 { text-align:center; color:#8ef0ff; }
-.card { 
-    background: linear-gradient(180deg,#07121a,#08121a); 
-    border-radius:14px; 
-    padding:14px; 
-    margin:10px; 
-    box-shadow: 0 14px 46px rgba(0,0,0,0.7); 
-    border:1px solid rgba(0,140,255,0.06); 
-}
-.stButton>button { 
-    background: linear-gradient(90deg,#00c2ff,#0069ff); 
-    color: white; 
-    font-weight:700; 
-    border-radius:10px; 
-    padding:10px 18px; 
-    width:100%; 
-    box-shadow:0 8px 20px rgba(0,100,255,0.18); 
-}
-.stButton>button:hover { transform: translateY(-3px); }
-input[type=text], textarea { 
-    background:#07111a !important; 
-    color:#eafcff !important; 
-    border-radius:8px !important; 
-    padding:10px !important; 
-    border:1px solid #183045 !important; 
-}
-footer, header[data-testid="stHeader"], #MainMenu {display:none !important;}
+header, footer {visibility: hidden;}
+.st-emotion-cache-1jicfl2 {padding-top: 0rem;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- SESSION STATE ----------------
-if "page" not in st.session_state:
-    st.session_state.page = "Home"
-
-# ---------------- CUSTOM NAVBAR ----------------
-header_html = """
+# ---------------- Navbar ----------------
+st.markdown("""
 <div style="
-    position: fixed;
-    top: 0;
-    width: 100%;
-    z-index: 9999;
-    background: linear-gradient(90deg,#00c2ff,#0069ff);
-    padding: 12px 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 30px;
-    font-weight: 700;
-    color: white;
-    border-radius: 0 0 12px 12px;
-    box-shadow: 0 2px 20px rgba(0,0,0,0.3);
+background:linear-gradient(90deg,#007BFF,#00C2FF);
+padding:14px;
+display:flex;
+justify-content:center;
+gap:18px;
+border-radius:0 0 12px 12px;
 ">
-    <a href="?page=Home" style="color:white;text-decoration:none;">🏠 Home</a>
-    <a href="?page=AnyVideo" style="color:white;text-decoration:none;">🔎 Any Video</a>
-    <a href="?page=Audio" style="color:white;text-decoration:none;">🎧 Audio</a>
-    <a href="?page=TikTok" style="color:white;text-decoration:none;">🎬 TikTok</a>
-    <a href="?page=Instagram" style="color:white;text-decoration:none;">📸 Instagram</a>
-    <a href="?page=Cookie" style="color:white;text-decoration:none;">⚙️ Cookie</a>
-    <a href="?page=About" style="color:white;text-decoration:none;">💡 About</a>
+<a href="?page=Home" style="color:white;font-weight:600;text-decoration:none;">🏠 Home</a>
+<a href="?page=AnyVideo" style="color:white;font-weight:600;text-decoration:none;">🎞️ Any Video</a>
+<a href="?page=Audio" style="color:white;font-weight:600;text-decoration:none;">🎧 Audio</a>
+<a href="?page=TikTok" style="color:white;font-weight:600;text-decoration:none;">🎬 TikTok</a>
+<a href="?page=Instagram" style="color:white;font-weight:600;text-decoration:none;">📸 Instagram</a>
+<a href="?page=Cookie" style="color:white;font-weight:600;text-decoration:none;">⚙️ Cookie</a>
+<a href="?page=About" style="color:white;font-weight:600;text-decoration:none;">💡 About</a>
 </div>
-"""
-st.components.v1.html(header_html, height=60, scrolling=False)
-st.markdown("<div style='margin-top:80px;'></div>", unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ---------------- AUTO DOWNLOAD FUNCTION ----------------
-def auto_download_button(file_path: Path, label: str = "Download"):
-    """Create an auto-starting HTML download link for a given file"""
+st.write("")  # small spacing
+
+# ---------------- Setup ----------------
+OUT_DIR = Path("downloads")
+OUT_DIR.mkdir(exist_ok=True)
+
+def auto_download_button(filepath: Path):
+    """Trigger automatic browser download after file is ready."""
     try:
-        data = file_path.read_bytes()
+        with open(filepath, "rb") as f:
+            data = f.read()
         b64 = base64.b64encode(data).decode()
-        href = f'data:application/octet-stream;base64,{b64}'
-        filename = file_path.name
-        download_html = f"""
-        <a id="autoDL" href="{href}" download="{filename}" style="
-            display:inline-block;
-            background:linear-gradient(90deg,#00c2ff,#0069ff);
-            color:white;
-            font-weight:700;
-            padding:10px 16px;
-            border-radius:8px;
-            text-decoration:none;
-            margin-top:10px;
-        ">{label}</a>
-        <script>document.getElementById('autoDL').click();</script>
-        """
-        st.markdown(download_html, unsafe_allow_html=True)
+        href = f'<a href="data:application/octet-stream;base64,{b64}" download="{filepath.name}" id="autoDL"></a>'
+        js = "<script>document.getElementById('autoDL').click();</script>"
+        st.markdown(href + js, unsafe_allow_html=True)
     except Exception as e:
-        st.error(f"Error creating download: {e}")
+        st.warning(f"Auto download failed: {e}")
 
-# ---------------- MAIN DOWNLOAD FUNCTION (with progress) ----------------
 def download_video(url: str, audio_only=False):
-    if not url.strip():
-        st.warning("Please enter a valid URL.")
-        return
-
+    """Download with real-time progress using yt-dlp."""
     progress_bar = st.progress(0)
     status_text = st.empty()
 
     def progress_hook(d):
         if d['status'] == 'downloading':
+            percent = d.get('_percent_str', '0%').replace('%', '')
+            speed = d.get('_speed_str', '')
+            eta = d.get('_eta_str', '')
             try:
-                percent = d.get('_percent_str', '0%').replace('%', '')
-                speed = d.get('_speed_str', '')
-                eta = d.get('_eta_str', '')
                 progress = float(percent) / 100
-                progress_bar.progress(progress)
-                status_text.markdown(
-                    f"**Downloading:** {percent}% Speed: {speed} ETA: {eta}"
-                )
-            except Exception:
-                pass
+            except:
+                progress = 0
+            progress_bar.progress(progress)
+            status_text.markdown(f"**Downloading:** {percent}% Speed: {speed} ETA: {eta}")
         elif d['status'] == 'finished':
             progress_bar.progress(1.0)
-            status_text.markdown("✅ **Processing file... please wait**")
+            status_text.markdown("✅ **Processing... please wait**")
 
     ydl_opts = {
-        "outtmpl": str(OUT_DIR / "%(title)s.%(ext)s"),
+        "outtmpl": str(OUT_DIR / "%(title).80s.%(ext)s"),
         "progress_hooks": [progress_hook],
         "quiet": True,
         "ignoreerrors": True,
     }
+
     if audio_only:
         ydl_opts["format"] = "bestaudio/best"
         ydl_opts["postprocessors"] = [{
@@ -161,45 +100,70 @@ def download_video(url: str, audio_only=False):
     except Exception as e:
         progress_bar.empty()
         status_text.error("❌ Download failed.")
-        st.error(e)
+        st.error(str(e))
         st.text(traceback.format_exc())
 
-# ---------------- PAGE LOGIC ----------------
-page = st.session_state.page
-st.markdown("<div class='card'>", unsafe_allow_html=True)
+# ---------------- Enter Key JS ----------------
+enter_js = """
+<script>
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    const btn = Array.from(document.querySelectorAll('button[kind=primary]'))[0];
+    if (btn) btn.click();
+  }
+});
+</script>
+"""
 
+# ---------------- Routing Logic ----------------
+query_params = st.query_params
+page = query_params.get("page", ["Home"])[0]
+
+# ---------------- Pages ----------------
 if page == "Home":
     st.title("🎬 All Video Downloader")
-    st.write("Welcome! Choose any platform from the top menu to start downloading.")
+    st.write("Welcome! Choose a platform from the top menu to start downloading.")
+    st.markdown("---")
+
+    recent = sorted(OUT_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
+    if recent:
+        st.subheader("📂 Recent Downloads")
+        for f in recent:
+            with open(f, "rb") as fh:
+                st.download_button("⬇️ Save", data=fh, file_name=f.name)
 
 elif page == "AnyVideo":
-    st.header("🔎 Download Any Video")
-    url = st.text_input("Enter video URL")
-    if st.button("Download"):
+    st.header("🎞️ Download Any Video")
+    st.markdown(enter_js, unsafe_allow_html=True)
+    url = st.text_input("Enter video URL (YouTube, TikTok, Instagram, etc.)")
+    if url and st.button("Download Video"):
         download_video(url)
 
 elif page == "Audio":
     st.header("🎧 Download Audio (MP3)")
-    url = st.text_input("Enter video URL")
-    if st.button("Download"):
+    st.markdown(enter_js, unsafe_allow_html=True)
+    url = st.text_input("Enter video URL to extract audio")
+    if url and st.button("Download Audio"):
         download_video(url, audio_only=True)
 
 elif page == "TikTok":
-    st.header("🎬 TikTok Video")
+    st.header("🎬 TikTok Downloader")
+    st.markdown(enter_js, unsafe_allow_html=True)
     url = st.text_input("Enter TikTok video URL")
-    if st.button("Download"):
+    if url and st.button("Download TikTok Video"):
         download_video(url)
 
 elif page == "Instagram":
-    st.header("📸 Instagram Video")
-    url = st.text_input("Enter Instagram video URL")
-    if st.button("Download"):
+    st.header("📸 Instagram Downloader")
+    st.markdown(enter_js, unsafe_allow_html=True)
+    url = st.text_input("Enter Instagram post or reel URL")
+    if url and st.button("Download Instagram Video"):
         download_video(url)
 
 elif page == "Cookie":
     st.header("⚙️ Cookie Settings")
     st.text_area("Paste your cookie string here", height=150)
-    st.info("Add cookies here if a site requires login access.")
+    st.info("Add cookies here if the website requires login access.")
 
 elif page == "About":
     st.header("💡 About")
@@ -210,28 +174,5 @@ elif page == "About":
     Developer: **Tanzeel ur Rehman**
     """)
 
-st.markdown("</div>", unsafe_allow_html=True)
-
-# ---------------- ENTER KEY SUPPORT ----------------
-enter_script = """
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  const inputs = document.querySelectorAll('input[type="text"]');
-  inputs.forEach(inp => {
-    inp.addEventListener('keypress', function(e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const btns = document.querySelectorAll('button');
-        for (let b of btns) {
-          if (b.innerText.toLowerCase().includes('download')) {
-            b.click();
-            break;
-          }
-        }
-      }
-    });
-  });
-});
-</script>
-"""
-st.markdown(enter_script, unsafe_allow_html=True)
+else:
+    st.error("Page not found.")
